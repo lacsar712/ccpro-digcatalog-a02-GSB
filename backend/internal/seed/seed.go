@@ -23,6 +23,8 @@ func date(s string) *time.Time {
 	return &t
 }
 
+func cm(v int) *int { return &v }
+
 func Run(db *gorm.DB) {
 	var count int64
 	db.Model(&models.User{}).Count(&count)
@@ -61,8 +63,8 @@ func Run(db *gorm.DB) {
 	}
 
 	units := []models.Unit{
-		{SiteID: sites[0].ID, Code: "T1", DepthMin: 0.2, DepthMax: 1.8, StratumDesc: "第①层表土；第②层灰褐文化层含陶片"},
-		{SiteID: sites[0].ID, Code: "T2", DepthMin: 0.3, DepthMax: 2.1, StratumDesc: "第③层黑灰层，见夯土迹象"},
+		{SiteID: sites[0].ID, Code: "T1", LengthCm: cm(1000), WidthCm: cm(1000), DepthMin: 0.2, DepthMax: 1.8, StratumDesc: "第①层表土；第②层灰褐文化层含陶片"},
+		{SiteID: sites[0].ID, Code: "T2", LengthCm: cm(1000), WidthCm: cm(1000), DepthMin: 0.3, DepthMax: 2.1, StratumDesc: "第③层黑灰层，见夯土迹象"},
 		{SiteID: sites[1].ID, Code: "T1", DepthMin: 0.1, DepthMax: 1.5, StratumDesc: "淤泥层下见玉琮残片伴随石核"},
 		{SiteID: sites[2].ID, Code: "T3", DepthMin: 0.5, DepthMax: 2.4, StratumDesc: "灰坑开口于第②层下，填土含卜骨"},
 	}
@@ -75,12 +77,20 @@ func Run(db *gorm.DB) {
 		{
 			UnitID: units[0].ID, MaterialID: &m0, RegisterNo: "EL-2024-0001",
 			ArtifactType: "陶片", MaterialName: "陶器", Completeness: "碎片",
+			XCm: cm(120), YCm: cm(340), ZCm: cm(45),
 			FindDate: date("2024-03-12"), Description: "泥质灰陶口沿残片，可见弦纹", StorageLoc: "库房A-架01",
 		},
 		{
 			UnitID: units[0].ID, MaterialID: &m1, RegisterNo: "EL-2024-0002",
 			ArtifactType: "青铜器", MaterialName: "青铜", Completeness: "残缺",
+			XCm: cm(480), YCm: cm(610), ZCm: cm(90),
 			FindDate: date("2024-03-15"), Description: "青铜爵足残段，表面绿锈", StorageLoc: "库房B-柜03",
+		},
+		{
+			UnitID: units[0].ID, MaterialID: &m3, RegisterNo: "EL-2024-0004",
+			ArtifactType: "石器", MaterialName: "玉石", Completeness: "残缺",
+			XCm: cm(760), YCm: cm(220), ZCm: cm(60),
+			FindDate: date("2024-03-22"), Description: "磨制石刀残件，刃部有使用崩痕", StorageLoc: "库房A-架03",
 		},
 		{
 			UnitID: units[1].ID, MaterialID: &m0, RegisterNo: "EL-2024-0003",

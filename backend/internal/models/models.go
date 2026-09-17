@@ -33,6 +33,8 @@ type Unit struct {
 	ID               uint           `json:"id" gorm:"primaryKey"`
 	SiteID           uint           `json:"siteId" gorm:"not null;index"`
 	Code             string         `json:"code" gorm:"size:64;not null"` // T1, T2...
+	LengthCm         *int           `json:"lengthCm" gorm:"check:chk_units_length_cm,length_cm > 0"` // 探方平面长（厘米），可选
+	WidthCm          *int           `json:"widthCm" gorm:"check:chk_units_width_cm,width_cm > 0"`    // 探方平面宽（厘米），可选
 	DepthMin         float64        `json:"depthMin"`
 	DepthMax         float64        `json:"depthMax"`
 	StratumDesc      string         `json:"stratumDesc" gorm:"type:text"`
@@ -54,13 +56,18 @@ type Material struct {
 
 type Find struct {
 	ID           uint           `json:"id" gorm:"primaryKey"`
-	UnitID       uint           `json:"unitId" gorm:"not null;index"`
+	UnitID       uint           `json:"unitId" gorm:"not null;uniqueIndex:idx_find_unit_coord,priority:1"`
 	MaterialID   *uint          `json:"materialId" gorm:"index"`
 	RegisterNo   string         `json:"registerNo" gorm:"uniqueIndex;size:64;not null"`
 	ArtifactType string         `json:"artifactType" gorm:"size:64;not null"` // 陶片/青铜器/骨器
 	MaterialName string         `json:"materialName" gorm:"size:64"`          // 冗余展示字段
 	Completeness string         `json:"completeness" gorm:"size:32"`          // 完整/残缺/碎片
 	FindDate     *time.Time     `json:"findDate" gorm:"type:date"`
+	// 探方局部坐标（厘米）。三个值要么全为空（旧记录未测点），要么同为非负整数。
+	// 同一探方内 (x_cm, y_cm, z_cm) 组合唯一；MySQL 唯一索引中 NULL 互不相同，未测点不参与约束。
+	XCm          *int           `json:"xCm" gorm:"uniqueIndex:idx_find_unit_coord,priority:2"`
+	YCm          *int           `json:"yCm" gorm:"uniqueIndex:idx_find_unit_coord,priority:3"`
+	ZCm          *int           `json:"zCm" gorm:"uniqueIndex:idx_find_unit_coord,priority:4"`
 	Description  string         `json:"description" gorm:"type:text"`
 	StorageLoc   string         `json:"storageLoc" gorm:"size:128"`
 	CreatedAt    time.Time      `json:"createdAt"`

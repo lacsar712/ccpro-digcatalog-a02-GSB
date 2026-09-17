@@ -36,6 +36,7 @@
             <th>器物类型</th>
             <th>材质</th>
             <th>完整度</th>
+            <th>坐标(cm)</th>
             <th>出土日期</th>
             <th>存放位置</th>
             <th>操作</th>
@@ -48,6 +49,7 @@
             <td><span class="tag">{{ item.artifactType }}</span></td>
             <td>{{ item.materialName || item.material?.name || '-' }}</td>
             <td>{{ item.completeness || '-' }}</td>
+            <td>{{ formatCoord(item) }}</td>
             <td>{{ formatDate(item.findDate) }}</td>
             <td>{{ item.storageLoc || '-' }}</td>
             <td>
@@ -103,6 +105,26 @@
             出土日期
             <input v-model="form.findDate" type="date" />
           </label>
+          <div class="full coord-group">
+            <span class="coord-title">
+              探方局部坐标（厘米，整数，非负）
+              <em>三值要么都留空，要么全部填写；同一探方内坐标唯一</em>
+            </span>
+            <div class="coord-inputs">
+              <label>
+                x
+                <input v-model="form.xCm" type="number" min="0" step="1" placeholder="留空=未测点" />
+              </label>
+              <label>
+                y
+                <input v-model="form.yCm" type="number" min="0" step="1" placeholder="留空=未测点" />
+              </label>
+              <label>
+                z
+                <input v-model="form.zCm" type="number" min="0" step="1" placeholder="埋深" />
+              </label>
+            </div>
+          </div>
           <label class="full">
             存放位置
             <input v-model="form.storageLoc" />
@@ -124,8 +146,10 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../api/http'
 
+const route = useRoute()
 const artifactTypes = ['陶片', '青铜器', '骨器', '玉器', '石器', '铁器', '其他']
 const list = ref([])
 const units = ref([])
@@ -144,6 +168,9 @@ const form = reactive({
   artifactType: '陶片',
   completeness: '完整',
   findDate: '',
+  xCm: '',
+  yCm: '',
+  zCm: '',
   description: '',
   storageLoc: ''
 })
@@ -151,6 +178,21 @@ const form = reactive({
 function formatDate(v) {
   if (!v) return '-'
   return String(v).slice(0, 10)
+}
+
+function formatCoord(item) {
+  if (item.xCm == null || item.yCm == null || item.zCm == null) return '未测点'
+  return `(${item.xCm}, ${item.yCm}, ${item.zCm})`
+}
+
+// 解析坐标输入：空串→null（未测）；否则须为非负整数。
+function parseCoord(v) {
+  if (v === '' || v === null || v === undefined) return { ok: true, value: null }
+  const n = Number(v)
+  if (!Number.isInteger(n) || n < 0) {
+    return { ok: false, value: null }
+  }
+  return { ok: true, value: n }
 }
 
 async function loadMeta() {
@@ -175,12 +217,15 @@ async function load() {
 function openCreate() {
   Object.assign(form, {
     id: null,
-    unitId: units.value[0]?.id || 0,
+    unitId: Number(filterUnitId.value) || units.value[0]?.id || 0,
     materialId: materials.value[0]?.id ?? null,
     registerNo: '',
     artifactType: '陶片',
     completeness: '完整',
     findDate: '',
+    xCm: '',
+    yCm: '',
+    zCm: '',
     description: '',
     storageLoc: ''
   })
@@ -197,6 +242,9 @@ function openEdit(item) {
     artifactType: item.artifactType,
     completeness: item.completeness || '完整',
     findDate: formatDate(item.findDate) === '-' ? '' : formatDate(item.findDate),
+    xCm: item.xCm ?? '',
+    yCm: item.yCm ?? '',
+    zCm: item.zCm ?? '',
     description: item.description || '',
     storageLoc: item.storageLoc || ''
   })
@@ -206,6 +254,18 @@ function openEdit(item) {
 
 async function save() {
   formError.value = ''
+  const xs = parseCoord(form.xCm)
+  const ys = parseCoord(form.yCm)
+  const zs = parseCoord(form.zCm)
+  if (!xs.ok || !ys.ok || !zs.ok) {
+    formError.value = '坐标必须是非负整数（厘米）'
+    return
+  }
+  const filled = xs.value !== null || ys.value !== null || zs.value !== null
+  if (filled && (xs.value === null || ys.value === null || zs.value === null)) {
+    formError.value = '坐标需 x、y、z 三个值同时填写，或全部留空'
+    return
+  }
   try {
     const payload = {
       unitId: form.unitId,
@@ -214,6 +274,9 @@ async function save() {
       artifactType: form.artifactType,
       completeness: form.completeness,
       findDate: form.findDate || null,
+      xCm: xs.value,
+      yCm: ys.value,
+      zCm: zs.value,
       description: form.description,
       storageLoc: form.storageLoc
     }
@@ -240,6 +303,7 @@ async function remove(item) {
 }
 
 onMounted(async () => {
+  if (route.query.unitId) filterUnitId.value = String(route.query.unitId)
   await loadMeta()
   await load()
 })
@@ -255,5 +319,33 @@ onMounted(async () => {
 
 .filters label {
   min-width: 200px;
+}
+
+.coord-group {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.coord-title {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.coord-title em {
+  display: block;
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 400;
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+
+.coord-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.6rem;
 }
 </style>

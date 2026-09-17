@@ -47,10 +47,19 @@ docker compose up --build
 
 1. **登录认证** — 管理员 / 记录员角色，JWT 鉴权
 2. **发掘工地 Site** — 名称、时代、经纬度、负责人
-3. **探方/发掘单位 Unit** — 所属工地、编号、深度区间、地层简述
-4. **出土文物 Find** — 所属探方、登记号、器物类型、材质、完整度、出土日期、描述、存放位置
-5. **材质分类 Material** — 名称、描述（字典表）
-6. **概览页** — 工地数、探方数、文物总数、按器物类型统计
+3. **探方/发掘单位 Unit** — 所属工地、编号、平面长宽（厘米，可选）、深度区间、地层简述
+4. **出土文物 Find** — 所属探方、登记号、器物类型、材质、完整度、**探方局部三维坐标 (xCm/yCm/zCm)**、出土日期、描述、存放位置
+5. **出土点示意** — 选定探方后以纯 SVG 平面网格标出全部带坐标文物，点击点位查看登记号与坐标，无重型地图 SDK
+6. **材质分类 Material** — 名称、描述（字典表）
+7. **概览页** — 工地数、探方数、文物总数、按器物类型统计
+
+### 出土点坐标规则
+
+- 每件 Find 的坐标 `xCm/yCm/zCm`（整数厘米，相对探方原点的局部坐标）均为**可选**：
+  - 三个值要么**全部留空**（旧记录、未测点允许保留），要么**同时填写且均为非负整数**；
+  - **同一探方内** `(xCm, yCm, zCm)` 组合唯一，重复提交返回 **409 Conflict**。
+- Unit 的 `lengthCm/widthCm` 描述探方平面尺寸，可选；未配置时示意图按 **1000 × 1000 cm** 占位并提示去补填实际尺寸。
+- 演示数据中「二里头遗址发掘区A / T1」配置了 1000 × 1000 cm 尺寸，并挂有 3 件带坐标文物（EL-2024-0001/0002/0004）。
 
 ## API 前缀
 
@@ -59,9 +68,15 @@ docker compose up --build
 - `POST /api/auth/login`
 - `GET|POST|PUT|DELETE /api/sites`
 - `GET|POST|PUT|DELETE /api/units`
-- `GET|POST|PUT|DELETE /api/finds`
+- `GET /api/units/:id/spot-map` — 返回探方平面尺寸与该探方全部带坐标 Find 的登记号、器物类型、坐标
+- `GET|POST|PUT|DELETE /api/finds` — Find 载荷含可选 `xCm/yCm/zCm`
 - `GET|POST|PUT|DELETE /api/materials`
 - `GET /api/overview`
+
+坐标接口约定：
+
+- `POST/PUT /api/finds` 中 `xCm/yCm/zCm` 要么都省略（`null`），要么三者同为非负整数；否则 `400`。
+- 同 Unit 内坐标组合已被占用时返回 `409`，响应体含 `{"conflict":"coord","registerNo":"..."}`。
 
 前端经 Nginx 将 `/api` 反代至后端容器 `http://backend:8080`。
 

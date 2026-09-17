@@ -21,6 +21,7 @@
           <tr>
             <th>编号</th>
             <th>所属工地</th>
+            <th>平面尺寸(cm)</th>
             <th>深度区间(m)</th>
             <th>地层简述</th>
             <th>操作</th>
@@ -30,6 +31,7 @@
           <tr v-for="item in list" :key="item.id">
             <td>{{ item.code }}</td>
             <td>{{ item.site?.name || '-' }}</td>
+            <td>{{ formatDims(item) }}</td>
             <td>{{ item.depthMin }} ~ {{ item.depthMax }}</td>
             <td>{{ item.stratumDesc || '-' }}</td>
             <td>
@@ -66,6 +68,14 @@
             深度上限(m)
             <input v-model.number="form.depthMax" type="number" step="0.1" />
           </label>
+          <label>
+            平面长(cm)
+            <input v-model="form.lengthCm" type="number" min="1" step="1" placeholder="可选，如 1000" />
+          </label>
+          <label>
+            平面宽(cm)
+            <input v-model="form.widthCm" type="number" min="1" step="1" placeholder="可选，如 1000" />
+          </label>
           <label class="full">
             地层简述
             <textarea v-model="form.stratumDesc" />
@@ -95,10 +105,27 @@ const form = reactive({
   id: null,
   siteId: 0,
   code: '',
+  lengthCm: '',
+  widthCm: '',
   depthMin: 0,
   depthMax: 0,
   stratumDesc: ''
 })
+
+function formatDims(item) {
+  if (item.lengthCm == null && item.widthCm == null) return '未配置'
+  const l = item.lengthCm ?? '?'
+  const w = item.widthCm ?? '?'
+  return `${l} × ${w}`
+}
+
+// 平面尺寸可选；填了就必须是正整数。
+function parseDim(v) {
+  if (v === '' || v === null || v === undefined) return { ok: true, value: null }
+  const n = Number(v)
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, value: null }
+  return { ok: true, value: n }
+}
 
 async function loadSites() {
   const { data } = await api.get('/sites')
@@ -122,6 +149,8 @@ function openCreate() {
     id: null,
     siteId: sites.value[0]?.id || 0,
     code: '',
+    lengthCm: '',
+    widthCm: '',
     depthMin: 0,
     depthMax: 1,
     stratumDesc: ''
@@ -135,6 +164,8 @@ function openEdit(item) {
     id: item.id,
     siteId: item.siteId,
     code: item.code,
+    lengthCm: item.lengthCm ?? '',
+    widthCm: item.widthCm ?? '',
     depthMin: item.depthMin,
     depthMax: item.depthMax,
     stratumDesc: item.stratumDesc
@@ -145,10 +176,18 @@ function openEdit(item) {
 
 async function save() {
   formError.value = ''
+  const ls = parseDim(form.lengthCm)
+  const ws = parseDim(form.widthCm)
+  if (!ls.ok || !ws.ok) {
+    formError.value = '平面长宽需为正整数（厘米）'
+    return
+  }
   try {
     const payload = {
       siteId: form.siteId,
       code: form.code,
+      lengthCm: ls.value,
+      widthCm: ws.value,
       depthMin: Number(form.depthMin) || 0,
       depthMax: Number(form.depthMax) || 0,
       stratumDesc: form.stratumDesc

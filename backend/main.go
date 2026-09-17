@@ -72,6 +72,7 @@ func main() {
 
 			auth.GET("/units", h.ListUnits)
 			auth.GET("/units/:id", h.GetUnit)
+			auth.GET("/units/:id/spot-map", h.GetSpotMap)
 			auth.POST("/units", h.CreateUnit)
 			auth.PUT("/units/:id", h.UpdateUnit)
 			auth.DELETE("/units/:id", h.DeleteUnit)

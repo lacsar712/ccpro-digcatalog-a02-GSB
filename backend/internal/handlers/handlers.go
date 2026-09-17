@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"digcatalog/internal/middleware"
@@ -169,6 +171,17 @@ func (h *Handler) GetUnit(c *gin.Context) {
 	c.JSON(http.StatusOK, unit)
 }
 
+// validateUnitDims 校验探方平面尺寸：长宽各自可选，填了就必须是正整数（厘米）。
+func validateUnitDims(lengthCm, widthCm *int) bool {
+	if lengthCm != nil && *lengthCm <= 0 {
+		return false
+	}
+	if widthCm != nil && *widthCm <= 0 {
+		return false
+	}
+	return true
+}
+
 func (h *Handler) CreateUnit(c *gin.Context) {
 	var unit models.Unit
 	if err := c.ShouldBindJSON(&unit); err != nil {
@@ -177,6 +190,10 @@ func (h *Handler) CreateUnit(c *gin.Context) {
 	}
 	if unit.SiteID == 0 || unit.Code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "所属工地和编号必填"})
+		return
+	}
+	if !validateUnitDims(unit.LengthCm, unit.WidthCm) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "探方长宽需为正整数（厘米）"})
 		return
 	}
 	var site models.Site
@@ -206,9 +223,15 @@ func (h *Handler) UpdateUnit(c *gin.Context) {
 	}
 	unit.SiteID = req.SiteID
 	unit.Code = req.Code
+	unit.LengthCm = req.LengthCm
+	unit.WidthCm = req.WidthCm
 	unit.DepthMin = req.DepthMin
 	unit.DepthMax = req.DepthMax
 	unit.StratumDesc = req.StratumDesc
+	if !validateUnitDims(unit.LengthCm, unit.WidthCm) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "探方长宽需为正整数（厘米）"})
+		return
+	}
 	if err := h.DB.Save(&unit).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -230,6 +253,39 @@ func (h *Handler) DeleteUnit(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// GetSpotMap 返回探方平面尺寸与该探方内全部已测点文物的登记号和三维坐标。
+func (h *Handler) GetSpotMap(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var unit models.Unit
+	if err := h.DB.First(&unit, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "探方不存在"})
+		return
+	}
+
+	type spot struct {
+		ID         uint   `json:"id"`
+		RegisterNo string `json:"registerNo"`
+		ArtifactType string `json:"artifactType"`
+		XCm        int    `json:"xCm"`
+		YCm        int    `json:"yCm"`
+		ZCm        int    `json:"zCm"`
+	}
+	var spots []spot
+	h.DB.Model(&models.Find{}).
+		Where("unit_id = ? AND x_cm IS NOT NULL AND y_cm IS NOT NULL AND z_cm IS NOT NULL", id).
+		Order("register_no asc").
+		Select("id, register_no, artifact_type, x_cm, y_cm, z_cm").
+		Scan(&spots)
+
+	c.JSON(http.StatusOK, gin.H{
+		"unitId":   unit.ID,
+		"code":     unit.Code,
+		"lengthCm": unit.LengthCm,
+		"widthCm":  unit.WidthCm,
+		"spots":    spots,
+	})
 }
 
 // ---------- Materials ----------
@@ -296,8 +352,36 @@ type findReq struct {
 	MaterialName string  `json:"materialName"`
 	Completeness string  `json:"completeness"`
 	FindDate     *string `json:"findDate"`
+	// 探方局部坐标（厘米）。要么三者全为空，要么三者同为非负整数。
+	XCm          *int    `json:"xCm"`
+	YCm          *int    `json:"yCm"`
+	ZCm          *int    `json:"zCm"`
 	Description  string  `json:"description"`
 	StorageLoc   string  `json:"storageLoc"`
+}
+
+// validateCoord 校验坐标三元组：全空（未测点）或三者齐全且非负。
+func validateCoord(x, y, z *int) (string, bool) {
+	filled := x != nil || y != nil || z != nil
+	if !filled {
+		return "", true
+	}
+	if x == nil || y == nil || z == nil {
+		return "坐标需 xCm、yCm、zCm 三个值同时填写，或全部留空", false
+	}
+	if *x < 0 || *y < 0 || *z < 0 {
+		return "坐标值不能为负", false
+	}
+	return "", true
+}
+
+// isDuplicateCoordErr 判断是否为坐标/登记号唯一约束冲突。
+func isDuplicateCoordErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "1062") || strings.Contains(msg, "duplicate")
 }
 
 func parseDate(s *string) *time.Time {
@@ -340,11 +424,14 @@ func (h *Handler) GetFind(c *gin.Context) {
 func (h *Handler) applyFindReq(find *models.Find, req *findReq) {
 	find.UnitID = req.UnitID
 	find.MaterialID = req.MaterialID
-	find.RegisterNo = req.RegisterNo
+	find.RegisterNo = strings.TrimSpace(req.RegisterNo)
 	find.ArtifactType = req.ArtifactType
 	find.MaterialName = req.MaterialName
 	find.Completeness = req.Completeness
 	find.FindDate = parseDate(req.FindDate)
+	find.XCm = req.XCm
+	find.YCm = req.YCm
+	find.ZCm = req.ZCm
 	find.Description = req.Description
 	find.StorageLoc = req.StorageLoc
 	if find.MaterialID != nil {
@@ -353,6 +440,25 @@ func (h *Handler) applyFindReq(find *models.Find, req *findReq) {
 			find.MaterialName = m.Name
 		}
 	}
+}
+
+// coordConflict 查找同一探方内坐标三元组已被占用的另一条记录（排除自身与软删除）。
+func (h *Handler) coordConflict(find *models.Find) (*models.Find, bool) {
+	if find.XCm == nil || find.YCm == nil || find.ZCm == nil {
+		return nil, false
+	}
+	var other models.Find
+	err := h.DB.
+		Where("unit_id = ? AND x_cm = ? AND y_cm = ? AND z_cm = ? AND id <> ?",
+			find.UnitID, *find.XCm, *find.YCm, *find.ZCm, find.ID).
+		First(&other).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false
+	}
+	if err != nil {
+		return nil, false
+	}
+	return &other, true
 }
 
 func (h *Handler) CreateFind(c *gin.Context) {
@@ -365,6 +471,10 @@ func (h *Handler) CreateFind(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "探方、登记号、器物类型必填"})
 		return
 	}
+	if msg, ok := validateCoord(req.XCm, req.YCm, req.ZCm); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	var unit models.Unit
 	if err := h.DB.First(&unit, req.UnitID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "所属探方不存在"})
@@ -372,7 +482,19 @@ func (h *Handler) CreateFind(c *gin.Context) {
 	}
 	var find models.Find
 	h.applyFindReq(&find, &req)
+	if other, dup := h.coordConflict(&find); dup {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      "同一探方内坐标 (" + strconv.Itoa(*find.XCm) + ", " + strconv.Itoa(*find.YCm) + ", " + strconv.Itoa(*find.ZCm) + ") 已被文物 " + other.RegisterNo + " 占用",
+			"conflict":   "coord",
+			"registerNo": other.RegisterNo,
+		})
+		return
+	}
 	if err := h.DB.Create(&find).Error; err != nil {
+		if isDuplicateCoordErr(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "登记号或坐标与已有文物冲突", "conflict": "coord"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -392,8 +514,28 @@ func (h *Handler) UpdateFind(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数无效"})
 		return
 	}
+	if req.UnitID == 0 || req.RegisterNo == "" || req.ArtifactType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "探方、登记号、器物类型必填"})
+		return
+	}
+	if msg, ok := validateCoord(req.XCm, req.YCm, req.ZCm); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	h.applyFindReq(&find, &req)
+	if other, dup := h.coordConflict(&find); dup {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      "同一探方内坐标 (" + strconv.Itoa(*find.XCm) + ", " + strconv.Itoa(*find.YCm) + ", " + strconv.Itoa(*find.ZCm) + ") 已被文物 " + other.RegisterNo + " 占用",
+			"conflict":   "coord",
+			"registerNo": other.RegisterNo,
+		})
+		return
+	}
 	if err := h.DB.Save(&find).Error; err != nil {
+		if isDuplicateCoordErr(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "登记号或坐标与已有文物冲突", "conflict": "coord"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
