@@ -37,6 +37,7 @@
             <th>材质</th>
             <th>完整度</th>
             <th>出土日期</th>
+            <th>坐标(cm)</th>
             <th>存放位置</th>
             <th>操作</th>
           </tr>
@@ -49,6 +50,7 @@
             <td>{{ item.materialName || item.material?.name || '-' }}</td>
             <td>{{ item.completeness || '-' }}</td>
             <td>{{ formatDate(item.findDate) }}</td>
+            <td>{{ formatCoord(item) }}</td>
             <td>{{ item.storageLoc || '-' }}</td>
             <td>
               <button class="btn secondary small" @click="openEdit(item)">编辑</button>
@@ -103,6 +105,18 @@
             出土日期
             <input v-model="form.findDate" type="date" />
           </label>
+          <label>
+            出土点 X (cm)
+            <input v-model="form.xCm" type="number" min="0" step="1" placeholder="选填" />
+          </label>
+          <label>
+            出土点 Y (cm)
+            <input v-model="form.yCm" type="number" min="0" step="1" placeholder="选填" />
+          </label>
+          <label>
+            出土点 Z (cm)
+            <input v-model="form.zCm" type="number" min="0" step="1" placeholder="选填" />
+          </label>
           <label class="full">
             存放位置
             <input v-model="form.storageLoc" />
@@ -123,14 +137,16 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../api/http'
 
 const artifactTypes = ['陶片', '青铜器', '骨器', '玉器', '石器', '铁器', '其他']
+const route = useRoute()
 const list = ref([])
 const units = ref([])
 const materials = ref([])
-const filterUnitId = ref('')
+const filterUnitId = ref(route.query.unitId ? String(route.query.unitId) : '')
 const filterType = ref('')
 const error = ref('')
 const formError = ref('')
@@ -145,12 +161,24 @@ const form = reactive({
   completeness: '完整',
   findDate: '',
   description: '',
-  storageLoc: ''
+  storageLoc: '',
+  xCm: '',
+  yCm: '',
+  zCm: ''
 })
 
 function formatDate(v) {
   if (!v) return '-'
   return String(v).slice(0, 10)
+}
+
+function formatCoord(item) {
+  if (item.xCm == null || item.yCm == null || item.zCm == null) return '-'
+  return `${item.xCm}, ${item.yCm}, ${item.zCm}`
+}
+
+function coordStr(item) {
+  return item == null ? '' : String(item)
 }
 
 async function loadMeta() {
@@ -182,7 +210,10 @@ function openCreate() {
     completeness: '完整',
     findDate: '',
     description: '',
-    storageLoc: ''
+    storageLoc: '',
+    xCm: '',
+    yCm: '',
+    zCm: ''
   })
   formError.value = ''
   showModal.value = true
@@ -198,14 +229,34 @@ function openEdit(item) {
     completeness: item.completeness || '完整',
     findDate: formatDate(item.findDate) === '-' ? '' : formatDate(item.findDate),
     description: item.description || '',
-    storageLoc: item.storageLoc || ''
+    storageLoc: item.storageLoc || '',
+    xCm: coordStr(item.xCm),
+    yCm: coordStr(item.yCm),
+    zCm: coordStr(item.zCm)
   })
   formError.value = ''
   showModal.value = true
 }
 
+// 坐标三值要么全空（返回 null 三元组），要么全是非负整数
+function parseCoords() {
+  const raw = [form.xCm, form.yCm, form.zCm].map((v) => String(v).trim())
+  if (raw.every((v) => v === '')) {
+    return { ok: true, coords: [null, null, null] }
+  }
+  if (raw.some((v) => !/^\d+$/.test(v))) {
+    return { ok: false }
+  }
+  return { ok: true, coords: raw.map((v) => parseInt(v, 10)) }
+}
+
 async function save() {
   formError.value = ''
+  const parsed = parseCoords()
+  if (!parsed.ok) {
+    formError.value = '出土点坐标需三个值都填写且为非负整数（厘米）'
+    return
+  }
   try {
     const payload = {
       unitId: form.unitId,
@@ -215,7 +266,10 @@ async function save() {
       completeness: form.completeness,
       findDate: form.findDate || null,
       description: form.description,
-      storageLoc: form.storageLoc
+      storageLoc: form.storageLoc,
+      xCm: parsed.coords[0],
+      yCm: parsed.coords[1],
+      zCm: parsed.coords[2]
     }
     if (form.id) {
       await api.put(`/finds/${form.id}`, payload)
@@ -243,6 +297,15 @@ onMounted(async () => {
   await loadMeta()
   await load()
 })
+
+// 侧栏出土点示意图跳转到 /finds?unitId=X 时同步筛选
+watch(
+  () => route.query.unitId,
+  (v) => {
+    filterUnitId.value = v ? String(v) : ''
+    load()
+  }
+)
 </script>
 
 <style scoped>

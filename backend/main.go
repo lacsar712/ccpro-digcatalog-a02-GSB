@@ -75,6 +75,7 @@ func main() {
 			auth.POST("/units", h.CreateUnit)
 			auth.PUT("/units/:id", h.UpdateUnit)
 			auth.DELETE("/units/:id", h.DeleteUnit)
+			auth.GET("/units/:id/spot-map", h.GetUnitSpotMap)
 
 			auth.GET("/materials", h.ListMaterials)
 			auth.POST("/materials", h.CreateMaterial)
@@ -85,6 +86,7 @@ func main() {
 			auth.GET("/finds/:id", h.GetFind)
 			auth.POST("/finds", h.CreateFind)
 			auth.PUT("/finds/:id", h.UpdateFind)
+			auth.PUT("/finds/:id/coord", h.UpdateFindCoord)
 			auth.DELETE("/finds/:id", h.DeleteFind)
 		}
 	}

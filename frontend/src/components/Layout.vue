@@ -13,6 +13,7 @@
           {{ item.label }}
         </router-link>
       </nav>
+      <SpotMap />
       <div class="sidebar-foot">
         <div>{{ auth.user?.username }} · {{ auth.roleLabel }}</div>
         <button class="btn secondary small" @click="onLogout">退出登录</button>
@@ -27,6 +28,7 @@
 <script setup>
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import SpotMap from './SpotMap.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -94,7 +96,6 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  flex: 1;
 }
 
 .nav-item {
@@ -117,6 +118,7 @@ nav {
   font-size: 0.85rem;
   padding-top: 0.75rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: auto;
 }
 
 .main {

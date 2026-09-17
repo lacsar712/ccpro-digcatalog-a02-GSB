@@ -22,6 +22,7 @@
             <th>编号</th>
             <th>所属工地</th>
             <th>深度区间(m)</th>
+            <th>平面尺寸(cm)</th>
             <th>地层简述</th>
             <th>操作</th>
           </tr>
@@ -31,6 +32,7 @@
             <td>{{ item.code }}</td>
             <td>{{ item.site?.name || '-' }}</td>
             <td>{{ item.depthMin }} ~ {{ item.depthMax }}</td>
+            <td>{{ formatSize(item) }}</td>
             <td>{{ item.stratumDesc || '-' }}</td>
             <td>
               <button class="btn secondary small" @click="openEdit(item)">编辑</button>
@@ -66,6 +68,14 @@
             深度上限(m)
             <input v-model.number="form.depthMax" type="number" step="0.1" />
           </label>
+          <label>
+            平面长(cm)
+            <input v-model="form.lengthCm" type="number" min="1" step="1" placeholder="选填" />
+          </label>
+          <label>
+            平面宽(cm)
+            <input v-model="form.widthCm" type="number" min="1" step="1" placeholder="选填" />
+          </label>
           <label class="full">
             地层简述
             <textarea v-model="form.stratumDesc" />
@@ -97,8 +107,15 @@ const form = reactive({
   code: '',
   depthMin: 0,
   depthMax: 0,
+  lengthCm: '',
+  widthCm: '',
   stratumDesc: ''
 })
+
+function formatSize(item) {
+  if (item.lengthCm == null || item.widthCm == null) return '未配置'
+  return `${item.lengthCm} × ${item.widthCm}`
+}
 
 async function loadSites() {
   const { data } = await api.get('/sites')
@@ -124,6 +141,8 @@ function openCreate() {
     code: '',
     depthMin: 0,
     depthMax: 1,
+    lengthCm: '',
+    widthCm: '',
     stratumDesc: ''
   })
   formError.value = ''
@@ -137,20 +156,47 @@ function openEdit(item) {
     code: item.code,
     depthMin: item.depthMin,
     depthMax: item.depthMax,
+    lengthCm: item.lengthCm == null ? '' : String(item.lengthCm),
+    widthCm: item.widthCm == null ? '' : String(item.widthCm),
     stratumDesc: item.stratumDesc
   })
   formError.value = ''
   showModal.value = true
 }
 
+// 平面尺寸：长宽同时留空（未配置）或同时为正整数
+function parseSize() {
+  const l = String(form.lengthCm).trim()
+  const w = String(form.widthCm).trim()
+  if (l === '' && w === '') {
+    return { ok: true, size: [null, null] }
+  }
+  if (!/^\d+$/.test(l) || !/^\d+$/.test(w)) {
+    return { ok: false }
+  }
+  const li = parseInt(l, 10)
+  const wi = parseInt(w, 10)
+  if (li <= 0 || wi <= 0) {
+    return { ok: false }
+  }
+  return { ok: true, size: [li, wi] }
+}
+
 async function save() {
   formError.value = ''
+  const parsed = parseSize()
+  if (!parsed.ok) {
+    formError.value = '平面长和宽需同时填写且为正整数（厘米），或同时留空'
+    return
+  }
   try {
     const payload = {
       siteId: form.siteId,
       code: form.code,
       depthMin: Number(form.depthMin) || 0,
       depthMax: Number(form.depthMax) || 0,
+      lengthCm: parsed.size[0],
+      widthCm: parsed.size[1],
       stratumDesc: form.stratumDesc
     }
     if (form.id) {
